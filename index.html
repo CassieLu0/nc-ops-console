@@ -529,7 +529,7 @@
           if(!isVisible(rec)) return;
           layer.setStyle({weight:2, color:'#fff', fillOpacity:0.9});
           layer.bindTooltip(
-            `<b>${rec.zip}</b> · ${rec.station} · Route ${rec.dominantRoute||'—'} · ${fmt(rec.volume)}/day · ${rec.price>0?fmtPrice(rec.price):'—'}`,
+            `<b>${rec.zip}</b> · ${rec.station} · ${rec.dominantDsp||'—'} · Route ${rec.dominantRoute||'—'} · ${fmt(rec.volume)}/day · ${rec.price>0?fmtPrice(rec.price):'—'}`,
             {className:'zip-tooltip', sticky:true}
           ).openTooltip(e.latlng);
         });
