@@ -682,7 +682,7 @@
     const info = STATIONS[state.focusStation];
     const rcolors = ROUTE_COLORS[state.focusStation] || {};
     const list = document.getElementById('rp-list');
-    list.innerHTML = info.routes.map(r=>`
+    list.innerHTML = info.routes.slice().sort((a,b)=>a.route.localeCompare(b.route,undefined,{numeric:true})).map(r=>`
       <div class="rp-chip" data-route="${r.route}">
         <span class="sw" style="background:${rcolors[r.route]||'#888'}"></span>
         <span>${r.route}</span>
@@ -744,7 +744,7 @@
       const info = STATIONS[state.focusStation];
       const rcolors = ROUTE_COLORS[state.focusStation] || {};
       const max = Math.max(...info.routes.map(r=>r.volume), 1);
-      rows = info.routes.map(r=>({
+      rows = info.routes.slice().sort((a,b)=>a.route.localeCompare(b.route,undefined,{numeric:true})).map(r=>({
         key:r.route, label:r.route, val:r.volume, display: fmt(r.volume)+'/d',
         color: rcolors[r.route]||'#888', pct: r.volume/max*100, kind:'route'
       }));
