@@ -186,6 +186,8 @@
     font-family:'IBM Plex Mono',monospace; transition:border-color .12s ease;
   }
   .rp-chip:hover{border-color:#37465f;}
+  .rp-chip.active{border-color:#e8ecf3; background:rgba(232,236,243,0.12);}
+  .rp-chip.active span{color:#fff;}
   .rp-chip .sw{width:9px;height:9px;border-radius:50%; flex:none;}
   .rp-chip .rv{color:var(--muted); font-size:9.5px;}
 
@@ -450,6 +452,7 @@
   const defaultFocus = STATION_KEYS.slice().sort((a,b)=>STATIONS[b].total_volume-STATIONS[a].total_volume)[0];
   const state = {
     view:'station',
+    focusRoute: null,
     activeStations: new Set(STATION_KEYS),
     activeDsps: new Set(DSP_KEYS),
     focusStation: defaultFocus,
@@ -494,6 +497,12 @@
       return {fillOpacity:0, opacity:0, weight:0, interactive:false};
     }
     const {fill} = zipStyleFor(rec);
+    if(state.view==='routes' && state.focusRoute){
+      if(rec.dominantRoute === state.focusRoute){
+        return { color:'#ffffff', weight:1.8, fillColor:fill, fillOpacity:0.88, opacity:0.95 };
+      }
+      return { color:'#0A101E', weight:0.6, fillColor:fill, fillOpacity:0.14, opacity:0.3 };
+    }
     return {
       color:'#0A101E', weight:0.9, fillColor:fill, fillOpacity:0.6, opacity:0.65
     };
@@ -690,13 +699,20 @@
       </div>
     `).join('');
     list.querySelectorAll('.rp-chip').forEach(c=>{
+      const rt = c.getAttribute('data-route');
+      if(rt === state.focusRoute) c.classList.add('active');
       c.addEventListener('click', ()=>{
-        const rt = c.getAttribute('data-route');
-        const pts = [];
-        Object.values(ZIP_INDEX).forEach(z=>{
-          if(z.station===state.focusStation && z.dominantRoute===rt && z.lat && z.lon) pts.push([z.lat,z.lon]);
-        });
-        if(pts.length) map.flyToBounds(pts, {padding:[60,60], maxZoom:11, duration:0.6});
+        state.focusRoute = (state.focusRoute === rt) ? null : rt;
+        list.querySelectorAll('.rp-chip').forEach(x=>x.classList.toggle('active', x.getAttribute('data-route')===state.focusRoute));
+        buildZipLayer();
+        buildRouteLabels();
+        if(state.focusRoute){
+          const pts = [];
+          Object.values(ZIP_INDEX).forEach(z=>{
+            if(z.station===state.focusStation && z.dominantRoute===rt && z.lat && z.lon) pts.push([z.lat,z.lon]);
+          });
+          if(pts.length) map.flyToBounds(pts, {padding:[60,60], maxZoom:11, duration:0.6});
+        }
       });
     });
   }
@@ -713,6 +729,7 @@
     el.querySelectorAll('.chip').forEach(c=>{
       c.addEventListener('click', ()=>{
         state.focusStation = c.getAttribute('data-focus');
+        state.focusRoute = null;
         refreshAll();
         const info = STATIONS[state.focusStation];
         if(info.lat && info.lon) map.flyTo([info.lat, info.lon], 9, {duration:0.6});
@@ -876,6 +893,7 @@
     document.querySelectorAll('.viewtab').forEach(t=>t.classList.remove('active'));
     tab.classList.add('active');
     state.view = tab.getAttribute('data-view');
+    state.focusRoute = null;
     refreshAll();
     if(state.view==='routes'){
       const info = STATIONS[state.focusStation];
