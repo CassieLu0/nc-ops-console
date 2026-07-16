@@ -88,12 +88,12 @@
 
   <div class="card">
     <h2>DSP × station price matrix</h2>
-    <div class="note">Simple avg $/pkg per DSP in each station where it operates (not volume-weighted); darker green = higher price. Network = station values weighted by the DSP's ZIP-share per station. ZIPs = priced ZIP count attributed to the DSP.</div>
+    <div class="note">Volume-weighted avg $/pkg per DSP in each station where it operates; darker green = higher price. Overall = station values combined by each station's pkg-volume share of the NC region (normalized over the DSP's stations; hover a cell for the weight). Vol = daily pkg volume attributed to the DSP.</div>
     <div class="tbl-scroll"><table id="matrix"></table></div>
   </div>
 
   <footer>
-    <strong>Method.</strong> Chart &amp; KPIs: for each DSP, avg price = Σ(ZIP price × DSP volume in that ZIP) ÷ Σ(DSP volume), over priced ZIPs only. Matrix: volume is <em>not</em> used — each cell is the simple mean of the DSP's ZIP prices in that station; a multi-station DSP's Network value weights its station cells by the percentage of its ZIP footprint in each station (hover a cell to see ZIP count and % share); the Station avg row is the simple mean of all priced ZIPs in the station.<br>
+    <strong>Method.</strong> Chart &amp; KPIs: for each DSP, avg price = Σ(ZIP price × DSP volume in that ZIP) ÷ Σ(DSP volume), over priced ZIPs only. Matrix: each cell is the DSP's volume-weighted avg within that station; a DSP's Overall value combines its station cells weighted by each station's pkg-volume share of the NC region, normalized over the stations it operates in (hover a cell for weights); the Station avg row is the station's volume-weighted avg over all priced ZIPs, and the region Overall is Σ(station avg × station volume share).<br>
     <strong>Price sheet.</strong> This page reads data/price_adjustments.csv the same way the map does — commit an updated CSV and these figures recompute on next load. The chip next to the selector shows whether adjustments are active.
   </footer>
 </div>
@@ -184,52 +184,46 @@ function render(){
   renderMatrix();
 }
 
-function computeSimple(filter){
-  const cells={}, all={ps:0,n:0};
-  for(const r of ZIPS){
-    if(filter!=='ALL' && r.s!==filter) continue;
-    if(r.p<=0) continue;
-    all.ps += r.p; all.n++;
-    for(const dsp of Object.keys(r.d)){
-      const c=cells[dsp]=cells[dsp]||{ps:0,n:0};
-      c.ps+=r.p; c.n++;
-    }
-  }
-  const out={};
-  for(const [dsp,c] of Object.entries(cells)) out[dsp]={ avg: c.n ? c.ps/c.n : null, n: c.n };
-  return { dsps: out, avg: all.n>0 ? all.ps/all.n : null };
+function stationVolumes(){
+  const sv={}; let region=0;
+  for(const r of ZIPS){ if(r.p<=0) continue; sv[r.s]=(sv[r.s]||0)+r.v; region+=r.v; }
+  return {sv, region};
 }
 
 function renderMatrix(){
-  const perSt = {}; STATIONS.forEach(s=>perSt[s]=computeSimple(s).dsps);
-  // DSP network value = station simple-avgs weighted by the DSP's ZIP share in each station
+  const perSt = {}; STATIONS.forEach(s=>perSt[s]=compute(s).dsps);
+  const {sv, region} = stationVolumes();
+  // DSP overall = station vol-weighted avgs combined by station volume share of NC region,
+  // normalized over the stations the DSP operates in
   const netDsp = {};
   const allDsps = [...new Set([].concat(...STATIONS.map(s=>Object.keys(perSt[s]))))];
   for(const d of allDsps){
-    let wsum=0, n=0;
-    for(const s of STATIONS){ const c=perSt[s][d]; if(c&&c.avg!==null){ wsum+=c.avg*c.n; n+=c.n; } }
-    netDsp[d] = { avg: n>0 ? wsum/n : null, n };
+    let wsum=0, w=0, vol=0;
+    for(const s of STATIONS){ const c=perSt[s][d]; if(c&&c.avg!==null){ wsum+=c.avg*sv[s]; w+=sv[s]; vol+=c.vol; } }
+    netDsp[d] = { avg: w>0 ? wsum/w : null, vol };
   }
   const dsps = allDsps.sort((a,b)=>(netDsp[b].avg??0)-(netDsp[a].avg??0));
   const vals=[]; dsps.forEach(d=>STATIONS.forEach(s=>{const c=perSt[s][d]; if(c&&c.avg!==null)vals.push(c.avg);}));
   const lo=Math.min(...vals), hi=Math.max(...vals);
   const heat=v=>{ if(v===null||v===undefined) return ''; const t=hi>lo?(v-lo)/(hi-lo):0.5;
     return 'background:rgba(15,122,92,'+(0.06+t*0.34).toFixed(2)+');'; };
-  let h='<thead><tr><th>DSP</th>'+STATIONS.map(s=>'<th>'+s+'</th>').join('')+'<th>Network</th><th>ZIPs</th></tr></thead><tbody>';
+  let h='<thead><tr><th>DSP</th>'+STATIONS.map(s=>'<th>'+s+'</th>').join('')+'<th>Overall</th><th>Vol/day</th></tr></thead><tbody>';
   for(const d of dsps){
+    const opSt = STATIONS.filter(s=>perSt[s][d]&&perSt[s][d].avg!==null);
+    const wTot = opSt.reduce((a,s)=>a+sv[s],0);
     h+='<tr><td>'+d+'</td>';
     for(const s of STATIONS){
       const c=perSt[s][d];
       if(c&&c.avg!==null){
-        const share=netDsp[d].n>0 ? Math.round(c.n/netDsp[d].n*100) : 0;
-        h+='<td class="heat" style="'+heat(c.avg)+'" title="'+c.n+' ZIPs · '+share+'% of '+d+' footprint">'+c.avg.toFixed(3)+'</td>';
+        const wPct=Math.round(sv[s]/wTot*100), rPct=(sv[s]/region*100).toFixed(1);
+        h+='<td class="heat" style="'+heat(c.avg)+'" title="station = '+rPct+'% of NC region volume; weight in '+d+' overall = '+wPct+'%">'+c.avg.toFixed(3)+'</td>';
       } else h+='<td style="color:#c3ccd3">—</td>';
     }
     const n=netDsp[d];
-    h+='<td style="font-weight:600">'+(n.avg!==null?n.avg.toFixed(3):'—')+'</td><td>'+n.n.toLocaleString()+'</td></tr>';
+    h+='<td style="font-weight:600">'+(n.avg!==null?n.avg.toFixed(3):'—')+'</td><td>'+n.vol.toLocaleString()+'</td></tr>';
   }
-  const netAll = computeSimple('ALL');
-  h+='<tr><td style="font-weight:600">Station avg</td>'+STATIONS.map(s=>{const a=computeSimple(s).avg;return '<td style="font-weight:600">'+(a!==null?a.toFixed(3):'—')+'</td>';}).join('')+'<td style="font-weight:600">'+netAll.avg.toFixed(3)+'</td><td></td></tr></tbody>';
+  const regionAvg = STATIONS.reduce((a,s)=>{const st=compute(s); return a + (st.avg!==null?st.avg*sv[s]:0);},0)/region;
+  h+='<tr><td style="font-weight:600">Station avg</td>'+STATIONS.map(s=>{const a=compute(s).avg;return '<td style="font-weight:600">'+(a!==null?a.toFixed(3):'—')+'</td>';}).join('')+'<td style="font-weight:600">'+regionAvg.toFixed(3)+'</td><td></td></tr></tbody>';
   $('matrix').innerHTML=h;
 }
 
